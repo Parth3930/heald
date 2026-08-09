@@ -1,6 +1,6 @@
 [package]
 name = "heald"
-version = "0.1.0-beta.2"
+version = "0.1.1"
 edition = "2024"
 description = "One memory. Every AI agent. A single-binary CLI that keeps Antigravity, Claude Code, Cursor, Hermes, and Codex all reading from the same rules and project memory."
 license = "MIT"
@@ -27,4 +27,3 @@ toml = "0.8"
 regex = "1.10"
 dirs = "6.0.0"
 walkdir = "2.5.0"
-
