@@ -73,13 +73,13 @@ Heald is the only tool here that: (1) requires zero runtime to keep alive, (2) a
 
 ## Installation
 
-### From crates.io (recommended)
+### Global Installation via crates.io (recommended)
 
 ```bash
 cargo install heald
 ```
 
-> Requires [Rust](https://rustup.rs/) (stable). The binary lands in `~/.cargo/bin/heald` and is immediately available in your path.
+> Requires [Rust](https://rustup.rs/) (stable). This installs `heald` globally. The binary lands in `~/.cargo/bin/heald` and is immediately available in your path.
 
 ### From source
 
