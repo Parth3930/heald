@@ -1,0 +1,29 @@
+[package]
+name = "heald"
+version = "0.1.0-beta.1"
+edition = "2024"
+description = "One memory. Every AI agent. A single-binary CLI that keeps Antigravity, Claude Code, Cursor, Hermes, and Codex all reading from the same rules and project memory."
+license = "MIT"
+repository = "https://github.com/parth-sharma-developer/heald"
+homepage = "https://github.com/parth-sharma-developer/heald"
+documentation = "https://github.com/parth-sharma-developer/heald#readme"
+readme = "README.md"
+keywords = ["ai", "agent", "memory", "context", "llm"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["Parth Sharma <sharmaparth.developer@gmail.com>"]
+exclude = [
+    "assets/",
+    "demo.cast",
+    ".heald/",
+    "*.cast",
+]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+chrono = { version = "0.4", features = ["serde"] }
+toml = "0.8"
+regex = "1.10"
+dirs = "6.0.0"
+walkdir = "2.5.0"
