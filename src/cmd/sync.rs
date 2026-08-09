@@ -93,9 +93,9 @@ fn build_routing_table(skills: &[crate::okf::Document], global_skills_dir: &Path
 fn heald_instructions() -> String {
     String::from(
         "\n\n## CRITICAL HEALD INSTRUCTIONS\n\
-         You MUST run `heald context agents` as your very first tool call in every task to load project context.\n\
+         You MUST run `heald context agents` ONCE as your very first tool call in a new session/conversation to load project context.\n\
          You MUST run `heald remember --type decision --title '...' --body '...'` to log major architectural or design decisions when you make them.\n\
-         You MUST run `heald finalize --summary '...'` as your very last tool call before finishing.\n"
+         You MUST run `heald finalize --summary '...'` as your very last tool call before finishing the session.\n"
     )
 }
 

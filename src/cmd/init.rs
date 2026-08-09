@@ -50,10 +50,10 @@ pub fn run(global: bool) {
     let global_heald_path = global_base.to_str().unwrap_or("").replace('\\', "/");
     let hook_text = format!(
         "\n\n## CRITICAL HEALD INSTRUCTIONS\n\
-         Your universal rules and skill routing table are in `{}/AGENTS.md` — read it at the start of every task.\n\
-         You MUST run `heald context agents` as your very first tool call in every task to load project memory.\n\
+         Your universal rules and skill routing table are in `{}/AGENTS.md` — read it at the start of every session.\n\
+         You MUST run `heald context agents` ONCE as your very first tool call in a new session/conversation to load project memory.\n\
          You MUST run `heald remember --type decision --title '...' --body '...'` to log major architectural or design decisions.\n\
-         You MUST run `heald finalize --summary '...'` as your very last tool call before finishing.\n",
+         You MUST run `heald finalize --summary '...'` as your very last tool call before finishing the session.\n",
         global_heald_path
     );
 
