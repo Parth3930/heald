@@ -12,7 +12,7 @@ Thank you for your interest in contributing! This document explains the process.
 **Requirements:** Rust stable (1.70+)
 
 ```bash
-git clone https://github.com/parth-sharma-developer/heald
+git clone https://github.com/Parth3930/heald
 cd heald
 cargo build
 cargo test
@@ -76,3 +76,4 @@ Proposals that fall outside this scope (dashboards, ML ranking, cloud sync, web 
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+

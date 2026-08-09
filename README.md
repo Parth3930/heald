@@ -84,7 +84,7 @@ cargo install heald
 ### From source
 
 ```bash
-git clone https://github.com/parth-sharma-developer/heald
+git clone https://github.com/Parth3930/heald
 cd heald
 cargo install --path .
 ```
@@ -363,3 +363,4 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <p align="center">
   <em>Heald (n.) — a wire on a loom that threads through and guides each warp strand so every one stays aligned to the same pattern, controlled by the loom's harness. Same job here.</em>
 </p>
+
