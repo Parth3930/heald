@@ -34,6 +34,9 @@ pub fn run(global: bool) {
     // Generate all harness-specific files
     crate::cmd::sync::run(None, true);
 
+    // Map all resources
+    crate::cmd::map::run();
+
     // Inject critical hook into every global agent config file
     let global_configs: Vec<std::path::PathBuf> = if let Some(home) = dirs::home_dir() {
         vec![
@@ -53,6 +56,9 @@ pub fn run(global: bool) {
          Your universal rules and skill routing table are in `{}/AGENTS.md` — read it at the start of every session.\n\
          You MUST run `heald context agents` ONCE as your very first tool call in a new session/conversation to load project memory.\n\
          You MUST run `heald remember --type decision --title '...' --body '...'` to log major architectural or design decisions.\n\
+         You CAN run `heald forget <slug-or-title>` to remove a memory document if it becomes outdated or incorrect.
+         You CAN run `heald map` to see a fast repository map and cross-references.
+         You CAN run `heald blame <path>` to see which memory decisions touched a given file.
          You MUST run `heald finalize --summary '...'` as your very last tool call before finishing the session.\n",
         global_heald_path
     );

@@ -28,6 +28,7 @@ pub fn run(harness: Option<&str>, all: bool) {
             other => println!("Unknown harness: {}. Local sync only writes AGENTS.md.", other),
         }
     }
+    crate::cmd::map::run();
 }
 
 /// Load all OKF documents from a directory, skipping broken files silently.
@@ -95,6 +96,9 @@ fn heald_instructions() -> String {
         "\n\n## CRITICAL HEALD INSTRUCTIONS\n\
          You MUST run `heald context agents` ONCE as your very first tool call in a new session/conversation to load project context.\n\
          You MUST run `heald remember --type decision --title '...' --body '...'` to log major architectural or design decisions when you make them.\n\
+         You CAN run `heald forget <slug-or-title>` to remove a memory document if it becomes outdated or incorrect.
+         You CAN run `heald map` to see a fast repository map and cross-references.
+         You CAN run `heald blame <path>` to see which memory decisions touched a given file.
          You MUST run `heald finalize --summary '...'` as your very last tool call before finishing the session.\n"
     )
 }
