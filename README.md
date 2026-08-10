@@ -104,6 +104,7 @@ This does five things in one command:
 - Creates `.heald/` (local memory, rules, skills store)
 - Creates `~/.heald/` (global rules and skills — shared across all projects)
 - Scans your existing agent skill directories (Antigravity, Cursor, Hermes, etc.) and imports them into `~/.heald/skills/`
+- Generates a lightweight repository map in `.heald/map.md`
 - Compiles `AGENTS.md` in your project root with a live routing table pointing to those global skills
 - Injects Heald's critical instructions into every global agent config file on your machine (`~/.gemini/config/AGENTS.md`, `~/.claude.md`, `~/.cursor/rules/heald.mdc`, `~/.hermes/AGENTS.md`)
 
@@ -162,6 +163,18 @@ heald remember --type decision \
 
 This creates `.heald/memory/chose-postgresql-over-mongodb.md` — a plain Markdown file, Git-diffable, readable without Heald.
 
+You can then quickly see which decisions touch a given file using `heald blame`:
+
+```bash
+heald blame src/db.rs
+```
+
+**Output:**
+```
+src/db.rs
+  chose-postgresql-over-mongodb.md  2026-08-09 "We need ACID guarantees for financial transactions..."
+```
+
 ### Step 5 — Switch agents without losing context
 
 You finish a session in Antigravity. You open Claude Code on the same project.
@@ -192,6 +205,8 @@ The summary is appended to `.heald/memory/log.md`. The next agent picks it up.
 | `heald context agents` | Print budget-pruned memory context for the current project |
 | `heald context agents --budget 4000` | Same, with a custom token budget (default: 8000 tokens) |
 | `heald remember --type decision --title "..." --body "..."` | Save a memory document |
+| `heald map` | Generate a lightweight repo map annotated with memory cross-references |
+| `heald blame <path>` | Show which memory documents touched a given file |
 | `heald finalize --summary "..."` | Append session summary to the log |
 | `heald doctor` | Validate all OKF files, report malformed frontmatter |
 
@@ -208,6 +223,7 @@ The summary is appended to `.heald/memory/log.md`. The next agent picks it up.
 my-project/
 ├── AGENTS.md                    ← Compiled project context (rules + skill routing table + memory hooks)
 └── .heald/
+    ├── map.md                   ← Auto-generated lightweight repository map
     ├── rules/                   ← Project-specific rules
     ├── skills/                  ← Project-specific skills (usually empty; uses global)
     └── memory/
@@ -308,6 +324,28 @@ The output header tells you exactly what was included and what was dropped:
 <!-- Heald Context: Included 4/7 memory documents (Budget: 16000 chars) -->
 ```
 
+## FAQ
+
+**Why not just maintain `CLAUDE.md` / `AGENTS.md` by hand?**
+You can, for one agent. The problem is five different agents each want their own
+format and location (`~/.claude.md`, `.cursor/rules/`, `~/.gemini/config/AGENTS.md`...).
+Heald keeps one source of truth and compiles/injects it into every format automatically,
+so you edit rules in one place instead of five.
+
+**What happens to memory that's not relevant anymore?**
+`heald forget <title>` removes a specific memory document. Budget-aware pruning also
+keeps low-value (old, unpinned) memory out of context automatically without deleting it —
+so it's still on disk if you need it, just not clogging every prompt.
+
+**Does this send my code or memory anywhere?**
+No. Heald is local-first — everything lives in `.heald/` and `~/.heald/` as plain
+Markdown files. No network calls, no telemetry, no cloud sync.
+
+**What if two agents write memory at the same time?**
+Known v0.1 limitation — no file locking yet on shared files (`AGENTS.md`, `log.md`).
+Avoid running multiple agents concurrently against the same project until this lands
+(tracked in Known Limitations / Contributing).
+
 ---
 
 ## Known Limitations (v0.1)
@@ -332,7 +370,6 @@ Contributions are welcome. Please open an issue before starting significant work
 **Areas that would benefit from contributions:**
 - Codex native format compiler
 - File locking for concurrent safety (`fs2` crate)
-- `heald forget` command to remove specific memory documents
 - Shell completions (bash, zsh, fish, PowerShell)
 - Windows path normalization edge cases
 
