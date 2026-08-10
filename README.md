@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.jpg" alt="Heald — One memory. Every AI agent." width="100%">
+  <img src="assets/heald-thumbnail.png" alt="Heald — One memory. Every AI agent." width="100%">
 </p>
 
 <p align="center">
@@ -27,6 +27,8 @@ Three problems compound each other:
 1. **No context on switch** — switching harnesses loses everything. You re-explain architecture, decisions, and conventions from scratch.
 2. **Context rot** — tools that *do* persist memory tend to accumulate everything forever. Bloated memory degrades agent output instead of improving it.
 3. **No single source of rules** — each harness wants its own format (`CLAUDE.md`, `.cursor/rules`, `AGENTS.md`, etc.). Skills you write in one agent never reach another.
+
+![Heald before and after comparison](assets/heald-before-after.png)
 
 ---
 
@@ -209,6 +211,16 @@ The summary is appended to `.heald/memory/log.md`. The next agent picks it up.
 | `heald blame <path>` | Show which memory documents touched a given file |
 | `heald finalize --summary "..."` | Append session summary to the log |
 | `heald doctor` | Validate all OKF files, report malformed frontmatter |
+
+---
+
+## New in this release
+
+*A cheap directory map your agent reads instead of grepping for it.*
+
+*Prune stale decisions — memory that stays useful instead of accumulating forever.*
+
+*Trace which decision touched a file, git-blame style.*
 
 ---
 
