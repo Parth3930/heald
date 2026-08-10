@@ -4,3 +4,6 @@ pub mod context;
 pub mod remember;
 pub mod finalize;
 pub mod doctor;
+pub mod forget;
+pub mod map;
+pub mod blame;

@@ -48,10 +48,25 @@ enum Commands {
     },
     /// Validate bundle integrity
     Doctor,
+    /// Forget a memory document
+    Forget {
+        query: String,
+        #[arg(short, long)]
+        yes: bool,
+    },
+    /// Show memory docs that touched a given file
+    Blame {
+        path: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Generate repo map
+    Map,
 }
 
 mod cmd;
 mod okf;
+mod xref;
 
 fn main() {
     let cli = Cli::parse();
@@ -62,5 +77,8 @@ fn main() {
         Commands::Remember { r#type, title, body, stdin } => cmd::remember::run(r#type, title, body.as_deref(), *stdin),
         Commands::Finalize { summary, stdin } => cmd::finalize::run(summary.as_deref(), *stdin),
         Commands::Doctor => cmd::doctor::run(),
+        Commands::Forget { query, yes } => cmd::forget::run(query, *yes),
+        Commands::Blame { path, json } => cmd::blame::run(path, *json),
+        Commands::Map => cmd::map::run(),
     }
 }
