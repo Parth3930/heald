@@ -96,8 +96,8 @@ mod tests {
     #[test]
     fn test_missing_type() {
         let doc = "---\ntitle: test\n---\nbody";
-        let parsed = Document::parse(doc);
-        assert!(parsed.is_err());
+        let parsed = Document::parse(doc).unwrap();
+        assert_eq!(parsed.frontmatter.r#type, "skill");
     }
 
     #[test]

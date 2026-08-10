@@ -98,6 +98,8 @@ mod tests {
                 resource: None,
                 tags: Some(vec!["pinned".to_string()]),
                 timestamp: None,
+                name: None,
+                triggers: None,
             },
             content: "test".to_string(),
         };
@@ -109,6 +111,8 @@ mod tests {
                 resource: None,
                 tags: None,
                 timestamp: None,
+                name: None,
+                triggers: None,
             },
             content: "test".to_string(),
         };
