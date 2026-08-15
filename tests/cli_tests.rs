@@ -3,12 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn get_bin() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    if path.ends_with("deps") {
-        path.pop();
-    }
-    path.join("heald.exe")
+    PathBuf::from(env!("CARGO_BIN_EXE_heald"))
 }
 
 #[test]
@@ -125,3 +120,32 @@ fn test_map_against_repo() {
     // Must include at least one cross-referenced memory doc.
     assert!(content.contains("see "), "Must contain cross reference");
 }
+
+#[test]
+fn test_context_and_memory_index() {
+    let local_base = PathBuf::from(".heald");
+    let mem_dir = local_base.join("memory");
+    fs::create_dir_all(&mem_dir).unwrap();
+    fs::write(
+        mem_dir.join("test-auto-index.md"),
+        "---\ntitle: Auto Index Test\ntimestamp: 2026-08-15T00:00:00Z\ntype: decision\ntags: [pinned]\n---\nAuto generated index test content.\n",
+    ).unwrap();
+
+    let output = Command::new(get_bin())
+        .args(&["context", "agents"])
+        .output()
+        .expect("failed to execute");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("Project Memory Manifest"));
+    assert!(stdout.contains("Auto Index Test"));
+    assert!(stdout.contains("test-auto-index.md"));
+
+    let index_file = mem_dir.join("index.md");
+    assert!(index_file.exists());
+    let index_content = fs::read_to_string(index_file).unwrap();
+    assert!(index_content.contains("Project Memory Manifest"));
+    assert!(index_content.contains("Auto Index Test"));
+}
+

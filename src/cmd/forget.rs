@@ -85,5 +85,7 @@ pub fn run(query: &str, yes: bool) {
         file.write_all(log_entry.as_bytes()).unwrap();
     }
     
+    crate::xref::rebuild_memory_index(&local_base);
+
     println!("Forgot \"{}\" (deleted {})", target_title, target_path.file_name().unwrap().to_str().unwrap());
 }

@@ -6,6 +6,8 @@ pub fn run(_harness: &str, budget: Option<usize>) {
     // Auto-init if local workspace doesn't exist
     if !local_base.exists() {
         crate::cmd::init::run(false);
+    } else {
+        crate::xref::rebuild_memory_index(&local_base);
     }
 
     let memory_dir = local_base.join("memory");

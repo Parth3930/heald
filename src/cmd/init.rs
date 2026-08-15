@@ -13,14 +13,11 @@ pub fn run(global: bool) {
         let memory_dir = local_base.join("memory");
         std::fs::create_dir_all(&memory_dir).unwrap();
         
-        let index_path = memory_dir.join("index.md");
-        if !index_path.exists() {
-            std::fs::write(&index_path, "---\ntype: summary\n---\n# Memory Index\n").unwrap();
-        }
         let log_path = memory_dir.join("log.md");
         if !log_path.exists() {
             std::fs::write(&log_path, "---\ntype: log\n---\n# Memory Log\n").unwrap();
         }
+        crate::xref::rebuild_memory_index(&local_base);
         println!("Initialized Heald locally at {}", local_base.display());
     }
     

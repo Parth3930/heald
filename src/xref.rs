@@ -78,3 +78,68 @@ pub fn find_references(docs: &[(PathBuf, Document)], file_path: &str) -> Vec<Ref
     }
     refs
 }
+
+pub fn rebuild_memory_index(local_base: &Path) {
+    let memory_dir = local_base.join("memory");
+    if !memory_dir.exists() {
+        return;
+    }
+    let docs = get_memory_docs(local_base);
+    let index_path = memory_dir.join("index.md");
+
+    let mut body = String::new();
+    if docs.is_empty() {
+        body.push_str("*(No active memory documents or architectural decisions recorded yet.)*\n");
+    } else {
+        body.push_str("## Project Memory Manifest\n\n");
+        body.push_str("| Title | Type | Date | Tags | Summary |\n");
+        body.push_str("| :--- | :--- | :--- | :--- | :--- |\n");
+
+        for (path, doc) in &docs {
+            let file_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            let title = doc.frontmatter.effective_title();
+            let doc_type = &doc.frontmatter.r#type;
+            let date = if let Some(ts) = &doc.frontmatter.timestamp {
+                if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+                    dt.format("%Y-%m-%d").to_string()
+                } else if ts.len() >= 10 {
+                    ts[..10].to_string()
+                } else {
+                    ts.clone()
+                }
+            } else {
+                "-".to_string()
+            };
+            let tags = doc.frontmatter.tags.as_ref()
+                .map(|t| t.join(", "))
+                .unwrap_or_else(|| "-".to_string());
+
+            let first_line = doc.content
+                .lines()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or("")
+                .trim();
+            let mut snippet = first_line.to_string();
+            if snippet.len() > 60 {
+                snippet.truncate(57);
+                snippet.push_str("...");
+            }
+            let snippet = snippet.replace('|', "\\|");
+            let title_escaped = title.replace('|', "\\|");
+
+            body.push_str(&format!(
+                "| **{}** (`{}.md`) | `{}` | {} | {} | {} |\n",
+                title_escaped, file_stem, doc_type, date, tags, snippet
+            ));
+        }
+    }
+
+    let full_content = format!(
+        "---\ntype: summary\ntitle: \"Memory Index\"\n---\n{}",
+        body
+    );
+
+    if let Err(e) = std::fs::write(&index_path, full_content) {
+        eprintln!("Failed to write index.md: {}", e);
+    }
+}

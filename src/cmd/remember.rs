@@ -36,5 +36,6 @@ pub fn run(doc_type: &str, title: &str, body_opt: Option<&str>, stdin: bool) {
 
     let path = memory_dir.join(format!("{}.md", slug));
     std::fs::write(&path, content).unwrap();
+    crate::xref::rebuild_memory_index(&local_base);
     println!("Saved memory to {}", path.display());
 }

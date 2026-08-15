@@ -28,6 +28,7 @@ pub fn run(harness: Option<&str>, all: bool) {
             other => println!("Unknown harness: {}. Local sync only writes AGENTS.md.", other),
         }
     }
+    crate::xref::rebuild_memory_index(&local_base);
     crate::cmd::map::run();
 }
 

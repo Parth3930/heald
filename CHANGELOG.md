@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.1.3] — 2026-08-15
+
+### Added
+- **Auto-generated Memory Manifest** — `index.md` is now automatically maintained as a structured markdown table of active decisions, memories, tags, timestamps, and summaries.
+- Rebuilt and synced across `heald remember`, `heald forget`, `heald sync`, `heald init`, and `heald context`.
+- Fixed empty `# summary` placeholder bug in `heald context agents`.
+
+---
+
 ## [0.1.0-beta.1] — 2026-08-09
 
 ### Added

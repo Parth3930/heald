@@ -52,15 +52,29 @@ pub struct Document {
 
 impl Document {
     pub fn parse(content: &str) -> Result<Self, String> {
-        if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
+        let content_norm = content.replace("\r\n", "\n");
+        if !content_norm.starts_with("---\n") {
             return Err("Missing YAML frontmatter".into());
         }
         
-        let split_idx = content[4..].find("\n---").map(|i| i + 4);
-        if let Some(idx) = split_idx {
-            let frontmatter_str = &content[4..idx];
-            let content_str = &content[idx + 4..].trim_start();
-            
+        if let Some(idx) = content_norm[4..].find("\n---\n") {
+            let frontmatter_str = &content_norm[4..idx + 4];
+            let content_str = content_norm[idx + 4 + 5..].trim_start();
+            let frontmatter: Frontmatter = serde_yaml::from_str(frontmatter_str)
+                .map_err(|e| format!("Invalid YAML frontmatter: {}", e))?;
+                
+            Ok(Self {
+                frontmatter,
+                content: content_str.to_string(),
+            })
+        } else if let Some(idx) = content_norm[4..].find("\n---") {
+            let frontmatter_str = &content_norm[4..idx + 4];
+            let after_idx = idx + 4 + 4;
+            let content_str = if after_idx <= content_norm.len() {
+                content_norm[after_idx..].trim_start()
+            } else {
+                ""
+            };
             let frontmatter: Frontmatter = serde_yaml::from_str(frontmatter_str)
                 .map_err(|e| format!("Invalid YAML frontmatter: {}", e))?;
                 
