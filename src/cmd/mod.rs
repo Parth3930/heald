@@ -7,3 +7,7 @@ pub mod doctor;
 pub mod forget;
 pub mod map;
 pub mod blame;
+pub mod compact;
+pub mod skill;
+pub mod mcp;
+

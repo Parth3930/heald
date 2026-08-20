@@ -17,6 +17,9 @@ pub fn get_memory_docs(local_base: &Path) -> Vec<(PathBuf, Document)> {
         for entry in walker {
             let path = entry.path();
             if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                if path.components().any(|c| c.as_os_str() == "archive") {
+                    continue;
+                }
                 if let Ok(doc) = Document::from_file(path) {
                     if path.file_name().and_then(|n| n.to_str()) != Some("index.md") &&
                        path.file_name().and_then(|n| n.to_str()) != Some("log.md") {
@@ -25,6 +28,7 @@ pub fn get_memory_docs(local_base: &Path) -> Vec<(PathBuf, Document)> {
                 }
             }
         }
+
     }
     // Sort by timestamp descending
     docs.sort_by(|a, b| {
@@ -57,6 +61,31 @@ pub fn extract_snippet(content: &str, path: &str) -> Option<String> {
     }
     None
 }
+
+/// Extract candidate source code file paths mentioned in a document.
+pub fn extract_referenced_paths(content: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let re = regex::Regex::new(r"([a-zA-Z0-9_\-\./\\]+\.[a-zA-Z0-9_\-]+)").unwrap();
+    for cap in re.captures_iter(content) {
+        let matched = &cap[1];
+        let norm = normalize_path(matched);
+        // Exclude web URLs, anchors, markdown syntax fragments, or pure extensions
+        if norm.starts_with("http://") || norm.starts_with("https://") || norm.starts_with("www.") {
+            continue;
+        }
+        // Exclude common memory doc references
+        if norm.ends_with(".md") {
+            continue;
+        }
+        // Must contain a slash or dot extension with typical code file extension
+        let is_code_or_file = norm.contains('/') || norm.contains('\\') || norm.ends_with(".rs") || norm.ends_with(".ts") || norm.ends_with(".js") || norm.ends_with(".py") || norm.ends_with(".go") || norm.ends_with(".toml") || norm.ends_with(".json") || norm.ends_with(".yaml") || norm.ends_with(".yml");
+        if is_code_or_file && !paths.contains(&norm) {
+            paths.push(norm);
+        }
+    }
+    paths
+}
+
 
 pub fn find_references(docs: &[(PathBuf, Document)], file_path: &str) -> Vec<Reference> {
     let mut refs = Vec::new();

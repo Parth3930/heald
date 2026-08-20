@@ -10,7 +10,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/built_with-Rust-orange?style=flat-square&logo=rust" alt="Built with Rust">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License">
-  <img src="https://img.shields.io/badge/version-0.1.0-teal?style=flat-square" alt="v0.1.0">
+  <img src="https://img.shields.io/badge/version-0.2.0-teal?style=flat-square" alt="v0.2.0">
+  <img src="https://img.shields.io/badge/MCP-JSON--RPC%202.0-purple?style=flat-square" alt="Model Context Protocol">
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square" alt="Cross-platform">
 </p>
 
@@ -43,8 +44,10 @@ Heald is a single Rust binary. You install it once. It acts as the shared brain 
 - **One `heald init`** scaffolds the local project store and injects Heald's instructions into the global config of every AI agent on your machine.
 - **Skills you have** in any agent (Antigravity, Cursor, Hermes) are automatically imported into `~/.heald/skills/` on init.
 - **Every compiled `AGENTS.md`** gets a live routing table pointing at those global skills by absolute path — so any agent, in any project, can load any skill without local copies.
-- **`heald remember`** saves decisions into the project's memory store as plain Markdown. Any agent in any harness can read them back with `heald context`.
-- **Budget-aware pruning** means the agent gets the *right* subset of memory for its context window, not a dump of everything.
+- **`heald remember`** saves decisions into the project's memory store as plain Markdown with optional tags (`--tags`). Any agent in any harness can read them back with `heald context`.
+- **BM25 Relevance Scoring & Budget-Aware Pruning** means agents get the exact pertinent subset of memory for the current task (`heald context --relevant "query"`), ranking matches dynamically while respecting token/character limits.
+- **Native MCP Server (`heald mcp` / `heald serve`)** speaks JSON-RPC 2.0 over stdio so AI agents can query and record memories through structured tools.
+- **Skill Management (`heald skill`)** allows listing, searching, and installing reusable skills across global and local scopes.
 
 ---
 
@@ -52,24 +55,22 @@ Heald is a single Rust binary. You install it once. It acts as the shared brain 
 
 | ❌ Not this | ✅ But this |
 |---|---|
-| A vector database | Plain Markdown + YAML, readable without Heald |
-| A cloud service | Local-first, git-friendly, purely file-based |
-| An MCP server | A single binary. Run it, it exits. No process to keep alive. |
+| A vector database | Plain Markdown + YAML with fast local BM25 ranking |
+| A bloated cloud service | Local-first, git-friendly, purely file-based |
+| Heavy background runtime | Single fast binary or instant stdio MCP server |
 | A Node/Python script | Zero runtime dependencies. Just Rust. |
-| An "remember everything" dumper | Budget-aware pruning: scores by pin status, recency, and frequency |
+| An "remember everything" dumper | BM25 relevance scoring + budget-aware recency/pinned pruning |
 
 ---
 
 ## How It Compares
 
-| Tool | Runtime | Memory | Skills sync | Auto-routing table | Budget pruning |
-|---|---|---|---|---|---|
-| **Heald** | Single Rust binary | ✅ Plain Markdown | ✅ Auto-imported from all agents | ✅ Dynamic, from actual skills | ✅ |
-| Memorix / memsearch | Node / Python MCP server | ✅ | ❌ | ❌ | ❌ |
-| ai-memory | Node + web UI | ✅ LLM-written | ❌ | ❌ | ❌ |
-| agentic-stack | Node + dashboard | ✅ | Partial | ❌ | ❌ |
-
-Heald is the only tool here that: (1) requires zero runtime to keep alive, (2) auto-imports your existing skills from every agent on init, (3) generates a live routing table from those skills, and (4) prunes memory to your token budget.
+| Tool | Runtime | Memory | Skills sync | Auto-routing table | BM25 Relevance | MCP Server |
+|---|---|---|---|---|---|---|
+| **Heald** | Single Rust binary | ✅ Plain Markdown | ✅ Auto-imported from all agents | ✅ Dynamic, from actual skills | ✅ | ✅ |
+| Memorix / memsearch | Node / Python MCP server | ✅ | ❌ | ❌ | Partial | ✅ |
+| ai-memory | Node + web UI | ✅ LLM-written | ❌ | ❌ | ❌ | ❌ |
+| agentic-stack | Node + dashboard | ✅ | Partial | ❌ | ❌ | ❌ |
 
 ---
 
@@ -110,91 +111,34 @@ This does five things in one command:
 - Compiles `AGENTS.md` in your project root with a live routing table pointing to those global skills
 - Injects Heald's critical instructions into every global agent config file on your machine (`~/.gemini/config/AGENTS.md`, `~/.claude.md`, `~/.cursor/rules/heald.mdc`, `~/.hermes/AGENTS.md`)
 
-**Output:**
-```
-Initialized Heald locally at /my-project/.heald
-Initialized Heald globally at ~/.heald
-Imported skill 'theme' into global Heald store.
-Imported skill 'backend-principles' into global Heald store.
-Compiled to ~/.heald/AGENTS.md
-Compiled to AGENTS.md
-Appended Heald hook to ~/.gemini/config/AGENTS.md
-Appended Heald hook to ~/.claude.md
-Appended Heald hook to ~/.cursor/rules/heald.mdc
-```
-
-### Step 2 — Let agents work normally
-
-Once initialized, **every AI agent that reads your global config will automatically**:
-
-1. Run `heald context agents` at the start of every task → loads project memory
-2. Run `heald remember ...` when they make architectural decisions → saves to memory  
-3. Run `heald finalize --summary "..."` at the end → logs the session
-
-You do not need to prompt them to do this. It is embedded in their global rules.
-
-### Step 3 — Add project rules
-
-Create any `.md` file in `.heald/rules/` with OKF frontmatter:
-
-```markdown
 ---
-type: rule
-title: "Database"
----
-Always use PostgreSQL. Never SQLite in production.
+
+## Model Context Protocol (MCP) Setup
+
+Heald has a built-in MCP server that works over `stdio` (`heald mcp` or `heald serve`).
+
+### Configure in Claude Desktop / Cursor / Antigravity
+
+Add `heald` to your MCP configuration file (e.g. `claude_desktop_config.json` or Antigravity MCP settings):
+
+```json
+{
+  "mcpServers": {
+    "heald": {
+      "command": "heald",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 
-Then sync to regenerate `AGENTS.md`:
-
-```bash
-heald sync
-```
-
-All agents immediately pick up the rule on their next task — no copy-paste, no manual updates.
-
-### Step 4 — Log a decision
-
-When an agent (or you) makes an important architectural call:
-
-```bash
-heald remember --type decision \
-  --title "Chose PostgreSQL over MongoDB" \
-  --body "We need ACID guarantees for financial transactions."
-```
-
-This creates `.heald/memory/chose-postgresql-over-mongodb.md` — a plain Markdown file, Git-diffable, readable without Heald.
-
-You can then quickly see which decisions touch a given file using `heald blame`:
-
-```bash
-heald blame src/db.rs
-```
-
-**Output:**
-```
-src/db.rs
-  chose-postgresql-over-mongodb.md  2026-08-09 "We need ACID guarantees for financial transactions..."
-```
-
-### Step 5 — Switch agents without losing context
-
-You finish a session in Antigravity. You open Claude Code on the same project.
-
-Claude Code sees the Heald hook in `~/.claude.md`, runs `heald context agents`, and instantly knows:
-- Every architectural decision made in the previous session
-- All project rules (database, style, conventions)
-- Which skills are available for what tasks (via the routing table)
-
-**Zero re-explanation. Zero context lost.**
-
-### Step 6 — Close out a session
-
-```bash
-heald finalize --summary "Added auth module, chose JWT over sessions for statelessness"
-```
-
-The summary is appended to `.heald/memory/log.md`. The next agent picks it up.
+### Exposed MCP Tools:
+* `heald_recall (query, budget)`: Retrieve project memories, decisions, and manifest filtered by query.
+* `heald_remember (type, title, body, tags)`: Record architectural decisions with structured tags.
+* `heald_forget (query)`: Remove an outdated memory document.
+* `heald_map ()`: Return repository structure with memory cross-references.
+* `heald_blame (path)`: Find memory decisions touching a file or directory.
+* `heald_doctor ()`: Run integrity diagnostics across rules, skills, and memory bundles.
 
 ---
 
@@ -205,22 +149,20 @@ The summary is appended to `.heald/memory/log.md`. The next agent picks it up.
 | `heald init` | Initialize local + global store, import skills from all agents, inject hooks |
 | `heald sync` | Recompile `AGENTS.md` from current rules + skills (run after editing rules) |
 | `heald context agents` | Print budget-pruned memory context for the current project |
-| `heald context agents --budget 4000` | Same, with a custom token budget (default: 8000 tokens) |
-| `heald remember --type decision --title "..." --body "..."` | Save a memory document |
+| `heald context agents --relevant "auth"` | Retrieve memories ranked by BM25 query relevance |
+| `heald context agents --budget 4000` | Retrieve context with a custom token budget (default: 8000 tokens) |
+| `heald remember --type decision --title "..." --body "..." --tags "auth,db"` | Save a tagged memory document |
+| `heald forget <slug_or_title>` | Remove or forget an outdated memory document |
+| `heald compact` | Deduplicate session logs and archive superseded duplicate memories |
 | `heald map` | Generate a lightweight repo map annotated with memory cross-references |
 | `heald blame <path>` | Show which memory documents touched a given file |
+| `heald skill list` | List all installed global and local skills with triggers |
+| `heald skill search <query>` | Search skills by name, description, or trigger keyword |
+| `heald skill install <path_or_text>` | Install a new skill locally or globally |
+| `heald skill info <name>` | Display detailed metadata and full instructions of a skill |
+| `heald doctor` | Validate markdown links, check orphan file references, and flag conflicts |
+| `heald mcp` / `heald serve` | Run JSON-RPC 2.0 / Model Context Protocol server over stdio |
 | `heald finalize --summary "..."` | Append session summary to the log |
-| `heald doctor` | Validate all OKF files, report malformed frontmatter |
-
----
-
-## New in this release
-
-*A cheap directory map your agent reads instead of grepping for it.*
-
-*Prune stale decisions — memory that stays useful instead of accumulating forever.*
-
-*Trace which decision touched a file, git-blame style.*
 
 ---
 

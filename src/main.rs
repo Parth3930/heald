@@ -27,6 +27,8 @@ enum Commands {
         harness: String,
         #[arg(long)]
         budget: Option<usize>,
+        #[arg(short = 'q', long = "relevant", aliases = ["query"])]
+        query: Option<String>,
     },
     /// Append a new memory document
     Remember {
@@ -36,6 +38,8 @@ enum Commands {
         title: String,
         #[arg(long)]
         body: Option<String>,
+        #[arg(long, value_delimiter = ',')]
+        tags: Option<Vec<String>>,
         #[arg(long)]
         stdin: bool,
     },
@@ -45,6 +49,11 @@ enum Commands {
         summary: Option<String>,
         #[arg(long)]
         stdin: bool,
+    },
+    /// Consolidate and archive old memory documents and deduplicate session logs
+    Compact {
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Validate bundle integrity
     Doctor,
@@ -62,23 +71,66 @@ enum Commands {
     },
     /// Generate repo map
     Map,
+    /// Run JSON-RPC 2.0 / Model Context Protocol (MCP) server over stdio
+    Mcp,
+    /// Run MCP server over stdio (alias for mcp)
+    Serve,
+    /// Manage global and local skills
+    #[command(subcommand)]
+    Skill(SkillCommands),
 }
 
-mod cmd;
-mod okf;
-mod xref;
+#[derive(Subcommand, Clone, Debug)]
+pub enum SkillCommands {
+    /// List all installed skills (global and local)
+    List {
+        #[arg(long)]
+        global: bool,
+        #[arg(long)]
+        local: bool,
+    },
+    /// Search installed skills by keyword or trigger
+    Search {
+        query: String,
+    },
+    /// Install or add a skill from a local file or markdown text
+    #[command(alias = "add")]
+    Install {
+        #[arg(allow_hyphen_values = true)]
+        source: String,
+        #[arg(long)]
+        name: Option<String>,
+        #[arg(long)]
+        global: bool,
+    },
+    /// Show detailed info and content of a skill
+    Info {
+        name: String,
+    },
+}
+
+pub mod bm25;
+pub mod cmd;
+pub mod okf;
+pub mod xref;
 
 fn main() {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Init { global } => cmd::init::run(*global),
         Commands::Sync { harness, all } => cmd::sync::run(harness.as_deref(), *all),
-        Commands::Context { harness, budget } => cmd::context::run(harness, *budget),
-        Commands::Remember { r#type, title, body, stdin } => cmd::remember::run(r#type, title, body.as_deref(), *stdin),
+        Commands::Context { harness, budget, query } => cmd::context::run(harness, *budget, query.as_deref()),
+        Commands::Remember { r#type, title, body, tags, stdin } => {
+            cmd::remember::run(r#type, title, body.as_deref(), tags.as_deref(), *stdin)
+        }
         Commands::Finalize { summary, stdin } => cmd::finalize::run(summary.as_deref(), *stdin),
+        Commands::Compact { dry_run } => cmd::compact::run(*dry_run),
         Commands::Doctor => cmd::doctor::run(),
         Commands::Forget { query, yes } => cmd::forget::run(query, *yes),
         Commands::Blame { path, json } => cmd::blame::run(path, *json),
         Commands::Map => cmd::map::run(),
+        Commands::Mcp | Commands::Serve => cmd::mcp::run(),
+        Commands::Skill(skill_cmd) => cmd::skill::run(skill_cmd),
     }
 }
+

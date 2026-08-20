@@ -1,7 +1,7 @@
 use chrono::Utc;
 use std::io::Read;
 
-pub fn run(doc_type: &str, title: &str, body_opt: Option<&str>, stdin: bool) {
+pub fn run(doc_type: &str, title: &str, body_opt: Option<&str>, tags_opt: Option<&[String]>, stdin: bool) {
     let local_base = std::env::current_dir().unwrap_or_default().join(".heald");
     
     // Auto-init if local workspace doesn't exist
@@ -29,9 +29,19 @@ pub fn run(doc_type: &str, title: &str, body_opt: Option<&str>, stdin: bool) {
         std::process::exit(1);
     }
 
+    let tags_yaml = if let Some(tags) = tags_opt {
+        if !tags.is_empty() {
+            format!("tags: [{}]\n", tags.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(", "))
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     let content = format!(
-        "---\ntype: {}\ntitle: \"{}\"\ntimestamp: {}\n---\n{}\n",
-        doc_type, title, timestamp, body
+        "---\ntype: {}\ntitle: \"{}\"\ntimestamp: {}\n{}---\n{}\n",
+        doc_type, title, timestamp, tags_yaml, body
     );
 
     let path = memory_dir.join(format!("{}.md", slug));

@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+use crate::bm25::{score_bm25, tokenize};
 use crate::okf::Document;
 
-pub fn run(_harness: &str, budget: Option<usize>) {
+pub fn run(_harness: &str, budget: Option<usize>, query: Option<&str>) {
     let local_base = std::env::current_dir().unwrap_or_default().join(".heald");
     
     // Auto-init if local workspace doesn't exist
@@ -22,6 +24,10 @@ pub fn run(_harness: &str, budget: Option<usize>) {
         for entry in walker {
             let path = entry.path();
             if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                // Ignore files in archive directory
+                if path.components().any(|c| c.as_os_str() == "archive") {
+                    continue;
+                }
                 if let Ok(doc) = Document::from_file(path) {
                     if path.file_name().and_then(|n| n.to_str()) == Some("index.md") {
                         index_doc = Some(doc);
@@ -33,7 +39,86 @@ pub fn run(_harness: &str, budget: Option<usize>) {
         }
     }
 
-    docs.sort_by_key(|d| -score(d));
+    if let Some(q) = query {
+        let q_tokens = tokenize(q);
+        if !q_tokens.is_empty() {
+            // Compute document tokens and corpus statistics for BM25
+            let doc_tokens_list: Vec<Vec<String>> = docs
+                .iter()
+                .map(|d| {
+                    let mut text = String::new();
+                    if let Some(title) = &d.frontmatter.title {
+                        text.push_str(title);
+                        text.push(' ');
+                    }
+                    if let Some(tags) = &d.frontmatter.tags {
+                        text.push_str(&tags.join(" "));
+                        text.push(' ');
+                    }
+                    text.push_str(&d.content);
+                    tokenize(&text)
+                })
+                .collect();
+
+            let total_docs = docs.len();
+            let total_len: usize = doc_tokens_list.iter().map(|dt| dt.len()).sum();
+            let avg_doc_len = if total_docs > 0 {
+                total_len as f64 / total_docs as f64
+            } else {
+                1.0
+            };
+
+            let mut doc_freqs: HashMap<String, usize> = HashMap::new();
+            for dt in &doc_tokens_list {
+                let mut unique = std::collections::HashSet::new();
+                for t in dt {
+                    if unique.insert(t.clone()) {
+                        *doc_freqs.entry(t.clone()).or_insert(0) += 1;
+                    }
+                }
+            }
+
+            // Score each doc
+            let mut scored_docs: Vec<(f64, i32, Document)> = docs
+                .into_iter()
+                .enumerate()
+                .map(|(i, d)| {
+                    let bm25 = score_bm25(
+                        &q_tokens,
+                        &doc_tokens_list[i],
+                        doc_tokens_list[i].len(),
+                        avg_doc_len,
+                        &doc_freqs,
+                        total_docs,
+                    );
+                    let base_s = score(&d);
+                    (bm25, base_s, d)
+                })
+                .collect();
+
+            // Sort by relevance score: docs with BM25 > 0 come first ordered by BM25,
+            // docs with BM25 == 0 come after ordered by base score.
+            scored_docs.sort_by(|a, b| {
+                let a_has_match = a.0 > 0.0001;
+                let b_has_match = b.0 > 0.0001;
+                match (b_has_match, a_has_match) {
+                    (true, false) => std::cmp::Ordering::Greater,
+                    (false, true) => std::cmp::Ordering::Less,
+                    (true, true) => b.0.partial_cmp(&a.0)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| b.1.cmp(&a.1)),
+                    (false, false) => b.1.cmp(&a.1),
+                }
+            });
+
+            docs = scored_docs.into_iter().map(|(_, _, d)| d).collect();
+
+        } else {
+            docs.sort_by_key(|d| -score(d));
+        }
+    } else {
+        docs.sort_by_key(|d| -score(d));
+    }
 
     let budget_chars = budget.unwrap_or(8000) * 4;
     let mut current_chars = 0;
@@ -56,10 +141,11 @@ pub fn run(_harness: &str, budget: Option<usize>) {
     }
 
     println!(
-        "<!-- Heald Context: Included {}/{} memory documents (Budget: {} chars) -->",
+        "<!-- Heald Context: Included {}/{} memory documents (Budget: {} chars{}) -->",
         included.len(),
         total_available,
-        budget_chars
+        budget_chars,
+        query.map(|q| format!(", Query: \"{}\"", q)).unwrap_or_default()
     );
     for doc in included {
         if let Some(title) = &doc.frontmatter.title {
@@ -121,3 +207,4 @@ mod tests {
         assert!(score(&doc_pinned) > score(&doc_unpinned) + 500);
     }
 }
+

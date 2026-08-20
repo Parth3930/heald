@@ -1,0 +1,602 @@
+use crate::okf::Document;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::io::{self, BufRead, Write};
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct JsonRpcRequest {
+    jsonrpc: String,
+    id: Option<Value>,
+    method: String,
+    params: Option<Value>,
+}
+
+
+#[derive(Debug, Serialize)]
+struct JsonRpcResponse {
+    jsonrpc: String,
+    id: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<JsonRpcError>,
+}
+
+#[derive(Debug, Serialize)]
+struct JsonRpcError {
+    code: i32,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<Value>,
+}
+
+pub fn run() {
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        let req: JsonRpcRequest = match serde_json::from_str(&line) {
+            Ok(r) => r,
+            Err(e) => {
+                let err_resp = JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: Value::Null,
+                    result: None,
+                    error: Some(JsonRpcError {
+                        code: -32700,
+                        message: format!("Parse error: {}", e),
+                        data: None,
+                    }),
+                };
+                let _ = writeln!(stdout, "{}", serde_json::to_string(&err_resp).unwrap());
+                let _ = stdout.flush();
+                continue;
+            }
+        };
+
+        let id = req.id.unwrap_or(Value::Null);
+
+        match req.method.as_str() {
+            "initialize" => {
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id,
+                    result: Some(json!({
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {
+                            "tools": {}
+                        },
+                        "serverInfo": {
+                            "name": "heald",
+                            "version": env!("CARGO_PKG_VERSION")
+                        }
+                    })),
+                    error: None,
+                };
+                let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                let _ = stdout.flush();
+            }
+            "notifications/initialized" | "initialized" => {
+                // Initialized notification, no response required if id is null, but if id is present, acknowledge
+                if !id.is_null() {
+                    let resp = JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: Some(json!({})),
+                        error: None,
+                    };
+                    let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                    let _ = stdout.flush();
+                }
+            }
+            "tools/list" => {
+                let tools = get_tool_definitions();
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id,
+                    result: Some(json!({
+                        "tools": tools
+                    })),
+                    error: None,
+                };
+                let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                let _ = stdout.flush();
+            }
+            "tools/call" => {
+                let params = req.params.unwrap_or(Value::Null);
+                let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
+
+                let call_result = handle_tool_call(tool_name, &arguments);
+                match call_result {
+                    Ok(res_val) => {
+                        let resp = JsonRpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id,
+                            result: Some(json!({
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": res_val
+                                    }
+                                ]
+                            })),
+                            error: None,
+                        };
+                        let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                        let _ = stdout.flush();
+                    }
+                    Err(err_msg) => {
+                        let resp = JsonRpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id,
+                            result: Some(json!({
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": format!("Error: {}", err_msg)
+                                    }
+                                ],
+                                "isError": true
+                            })),
+                            error: None,
+                        };
+                        let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                        let _ = stdout.flush();
+                    }
+                }
+            }
+            "ping" => {
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id,
+                    result: Some(json!({})),
+                    error: None,
+                };
+                let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                let _ = stdout.flush();
+            }
+            _ => {
+                if !id.is_null() {
+                    let resp = JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id,
+                        result: None,
+                        error: Some(JsonRpcError {
+                            code: -32601,
+                            message: format!("Method not found: {}", req.method),
+                            data: None,
+                        }),
+                    };
+                    let _ = writeln!(stdout, "{}", serde_json::to_string(&resp).unwrap());
+                    let _ = stdout.flush();
+                }
+            }
+        }
+    }
+}
+
+fn get_tool_definitions() -> Vec<Value> {
+    vec![
+        json!({
+            "name": "heald_recall",
+            "description": "Retrieve project memories, decisions, and manifest assembled within a token/char budget.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Optional keyword or query to filter memories."
+                    },
+                    "budget": {
+                        "type": "integer",
+                        "description": "Maximum character budget (defaults to ~32000 chars / 8000 tokens)."
+                    }
+                }
+            }
+        }),
+        json!({
+            "name": "heald_remember",
+            "description": "Record an architectural decision, rule, learning, or project context document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "description": "Type of memory: decision, rule, learning, pattern, etc. (default: decision)"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Short, descriptive title for the memory."
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Markdown body detailing what was decided, rationale, or instructions."
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional tags, e.g. ['pinned', 'auth', 'database']."
+                    }
+                },
+                "required": ["title", "body"]
+            }
+        }),
+        json!({
+            "name": "heald_forget",
+            "description": "Remove or forget an outdated memory document by slug or title match.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Slug or substring match of the memory document title to remove."
+                    }
+                },
+                "required": ["query"]
+            }
+        }),
+        json!({
+            "name": "heald_map",
+            "description": "Generate and return a condensed repository structure map with file cross-references to past decisions.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
+            "name": "heald_blame",
+            "description": "Find all memory documents and architectural decisions that referenced a specific file or directory.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory path to inspect."
+                    }
+                },
+                "required": ["path"]
+            }
+        }),
+        json!({
+            "name": "heald_doctor",
+            "description": "Run integrity checks across rules, skills, and memory bundles.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        })
+    ]
+}
+
+pub fn handle_tool_call(name: &str, args: &Value) -> Result<String, String> {
+    match name {
+        "heald_recall" => {
+            let query = args.get("query").and_then(|v| v.as_str());
+            let budget = args.get("budget").and_then(|v| v.as_u64()).map(|b| b as usize);
+            recall_memory(query, budget)
+        }
+        "heald_remember" => {
+            let doc_type = args.get("type").and_then(|v| v.as_str()).unwrap_or("decision");
+            let title = args.get("title").and_then(|v| v.as_str()).ok_or("Missing required 'title'")?;
+            let body = args.get("body").and_then(|v| v.as_str()).ok_or("Missing required 'body'")?;
+            let tags: Option<Vec<String>> = args.get("tags").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect()
+            });
+
+            remember_memory(doc_type, title, body, tags.as_deref())
+        }
+        "heald_forget" => {
+            let query = args.get("query").and_then(|v| v.as_str()).ok_or("Missing required 'query'")?;
+            forget_memory(query)
+        }
+        "heald_map" => {
+            get_repo_map()
+        }
+        "heald_blame" => {
+            let path = args.get("path").and_then(|v| v.as_str()).ok_or("Missing required 'path'")?;
+            blame_path(path)
+        }
+        "heald_doctor" => {
+            run_doctor_checks()
+        }
+        other => Err(format!("Unknown tool: {}", other)),
+    }
+}
+
+fn recall_memory(query_opt: Option<&str>, budget_opt: Option<usize>) -> Result<String, String> {
+    let local_base = std::env::current_dir().unwrap_or_default().join(".heald");
+    if !local_base.exists() {
+        crate::cmd::init::run(false);
+    } else {
+        crate::xref::rebuild_memory_index(&local_base);
+    }
+
+    let memory_dir = local_base.join("memory");
+    let mut docs = Vec::new();
+    let mut index_doc = None;
+
+    if memory_dir.exists() {
+        let walker = walkdir::WalkDir::new(&memory_dir).into_iter().filter_map(|e| e.ok());
+        for entry in walker {
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                if let Ok(doc) = Document::from_file(path) {
+                    if path.file_name().and_then(|n| n.to_str()) == Some("index.md") {
+                        index_doc = Some(doc);
+                    } else if path.file_name().and_then(|n| n.to_str()) != Some("log.md") {
+                        docs.push(doc);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(query) = query_opt {
+        let q = query.to_lowercase();
+        docs.retain(|d| {
+            d.frontmatter.effective_title().to_lowercase().contains(&q)
+                || d.content.to_lowercase().contains(&q)
+                || d.frontmatter.tags.as_ref().map_or(false, |tags| tags.iter().any(|t| t.to_lowercase().contains(&q)))
+        });
+    }
+
+    docs.sort_by_key(|d| -score_doc(d));
+
+    let budget_chars = budget_opt.unwrap_or(8000) * 4;
+    let mut current_chars = 0;
+    let mut included = Vec::new();
+
+    if let Some(idx) = index_doc {
+        let len = idx.content.len();
+        current_chars += len;
+        included.push(idx);
+    }
+
+    let total_available = docs.len() + if included.is_empty() { 0 } else { 1 };
+
+    for doc in docs {
+        let len = doc.content.len();
+        if current_chars + len <= budget_chars {
+            current_chars += len;
+            included.push(doc);
+        }
+    }
+
+    let mut out = format!(
+        "<!-- Heald Context: Included {}/{} memory documents (Budget: {} chars) -->\n",
+        included.len(),
+        total_available,
+        budget_chars
+    );
+
+    for doc in included {
+        if let Some(title) = &doc.frontmatter.title {
+            out.push_str(&format!("\n# {}\n\n{}\n", title, doc.content));
+        } else {
+            out.push_str(&format!("\n# {}\n\n{}\n", doc.frontmatter.r#type, doc.content));
+        }
+    }
+
+    Ok(out)
+}
+
+fn score_doc(doc: &Document) -> i32 {
+    let mut s = 0;
+    if let Some(tags) = &doc.frontmatter.tags {
+        if tags.iter().any(|t| t == "pinned") {
+            s += 1000;
+        }
+    }
+    if let Some(ts) = &doc.frontmatter.timestamp {
+        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+            let days = (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days();
+            s += (100 - days).max(0) as i32;
+        }
+    }
+    s
+}
+
+fn remember_memory(doc_type: &str, title: &str, body: &str, tags_opt: Option<&[String]>) -> Result<String, String> {
+    let local_base = std::env::current_dir().unwrap_or_default().join(".heald");
+    if !local_base.exists() {
+        crate::cmd::init::run(false);
+    }
+
+    let memory_dir = local_base.join("memory");
+    if !memory_dir.exists() {
+        std::fs::create_dir_all(&memory_dir).map_err(|e| e.to_string())?;
+    }
+
+    let timestamp = Utc::now().to_rfc3339();
+    let slug = title.to_lowercase().replace(' ', "-").chars().filter(|c| c.is_alphanumeric() || *c == '-').collect::<String>();
+
+    let tags_yaml = if let Some(tags) = tags_opt {
+        if !tags.is_empty() {
+            format!("tags: [{}]\n", tags.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(", "))
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    let content = format!(
+        "---\ntype: {}\ntitle: \"{}\"\ntimestamp: {}\n{}---\n{}\n",
+        doc_type, title, timestamp, tags_yaml, body
+    );
+
+    let path = memory_dir.join(format!("{}.md", slug));
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    crate::xref::rebuild_memory_index(&local_base);
+
+    Ok(format!("Saved memory to {}", path.display()))
+}
+
+fn forget_memory(query: &str) -> Result<String, String> {
+    let local_base = std::env::current_dir().unwrap_or_default().join(".heald");
+    let memory_dir = local_base.join("memory");
+
+    if !memory_dir.exists() {
+        return Err("No memory directory found.".to_string());
+    }
+
+    if query == "index" {
+        return Err("Refusing to delete index.md.".to_string());
+    }
+
+    let mut exact_match: Option<(PathBuf, String)> = None;
+    let mut fuzzy_matches = Vec::new();
+
+    let walker = walkdir::WalkDir::new(&memory_dir).into_iter().filter_map(|e| e.ok());
+    for entry in walker {
+        if entry.file_type().is_file() && entry.path().extension().map_or(false, |ext| ext == "md") {
+            let file_stem = entry.path().file_stem().unwrap().to_str().unwrap();
+            if file_stem == "log" || file_stem == "index" {
+                continue;
+            }
+
+            if let Ok(doc) = Document::from_file(entry.path()) {
+                let title = doc.frontmatter.effective_title().to_string();
+                if file_stem == query {
+                    exact_match = Some((entry.path().to_path_buf(), title));
+                    break;
+                }
+                if title.to_lowercase().contains(&query.to_lowercase()) {
+                    fuzzy_matches.push((entry.path().to_path_buf(), file_stem.to_string(), title));
+                }
+            }
+        }
+    }
+
+    let (target_path, target_title) = if let Some(exact) = exact_match {
+        exact
+    } else if fuzzy_matches.len() == 1 {
+        let m = fuzzy_matches.pop().unwrap();
+        (m.0, m.2)
+    } else if fuzzy_matches.len() > 1 {
+        let list = fuzzy_matches.iter().map(|m| format!("- {} (slug: {})", m.2, m.1)).collect::<Vec<_>>().join("\n");
+        return Err(format!("Multiple matches found for \"{}\":\n{}", query, list));
+    } else {
+        return Err(format!("No memory document found matching \"{}\".", query));
+    };
+
+    std::fs::remove_file(&target_path).map_err(|e| e.to_string())?;
+
+    let log_path = memory_dir.join("log.md");
+    let timestamp = Utc::now().to_rfc3339();
+    let log_entry = format!("Forgot: \"{}\" ({})\n", target_title, timestamp);
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+        let _ = file.write_all(log_entry.as_bytes());
+    }
+
+    crate::xref::rebuild_memory_index(&local_base);
+
+    Ok(format!("Forgot \"{}\" (deleted {})", target_title, target_path.file_name().unwrap().to_str().unwrap()))
+}
+
+fn get_repo_map() -> Result<String, String> {
+    crate::cmd::map::run();
+    let local_base = std::env::current_dir().unwrap_or_default().join(".heald");
+    let map_file = local_base.join("map.md");
+    if map_file.exists() {
+        std::fs::read_to_string(&map_file).map_err(|e| e.to_string())
+    } else {
+        Err("Failed to generate repository map.".to_string())
+    }
+}
+
+fn blame_path(path: &str) -> Result<String, String> {
+    let local_base = std::env::current_dir().unwrap_or_default().join(".heald");
+    let docs = crate::xref::get_memory_docs(&local_base);
+
+    let target_path = Path::new(path);
+    let mut files_to_check = Vec::new();
+
+    if target_path.is_dir() {
+        let walker = ignore::WalkBuilder::new(target_path).build();
+        for result in walker {
+            if let Ok(entry) = result {
+                if entry.path().is_file() {
+                    files_to_check.push(entry.path().to_path_buf());
+                }
+            }
+        }
+    } else {
+        files_to_check.push(target_path.to_path_buf());
+    }
+
+    let mut all_refs = std::collections::BTreeMap::new();
+    let mut total_refs = 0;
+
+    for file in files_to_check {
+        let file_str = file.to_string_lossy().to_string();
+        let norm = crate::xref::normalize_path(&file_str);
+        let refs = crate::xref::find_references(&docs, &norm);
+        if !refs.is_empty() {
+            total_refs += refs.len();
+            all_refs.insert(norm, refs);
+        }
+    }
+
+    if total_refs == 0 {
+        return Ok(format!("No decisions on record for {}", path));
+    }
+
+    let mut out = String::new();
+    for (file, refs) in all_refs {
+        out.push_str(&format!("{}\n", file));
+        for r in refs {
+            out.push_str(&format!("  {:<20} {:<10} \"{}\"\n", r.doc_filename, r.timestamp, r.snippet));
+        }
+    }
+
+    Ok(out)
+}
+
+fn run_doctor_checks() -> Result<String, String> {
+    let local_base = std::env::current_dir().unwrap_or_default().join(".heald");
+    let global_base = dirs::home_dir().unwrap_or_default().join(".heald");
+
+    let mut issues = Vec::new();
+    for base in &[local_base, global_base] {
+        if base.exists() {
+            check_doctor_dir(&base.join("rules"), &mut issues);
+            check_doctor_dir(&base.join("skills"), &mut issues);
+            check_doctor_dir(&base.join("memory"), &mut issues);
+        }
+    }
+
+    if issues.is_empty() {
+        Ok("Bundle is healthy. All documents and rules parsed cleanly.".to_string())
+    } else {
+        Ok(format!("Doctor found issues:\n{}", issues.join("\n")))
+    }
+}
+
+fn check_doctor_dir(dir: &Path, issues: &mut Vec<String>) {
+    if !dir.exists() {
+        return;
+    }
+    let walker = walkdir::WalkDir::new(dir).into_iter().filter_map(|e| e.ok());
+    for entry in walker {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+            if let Err(e) = Document::from_file(path) {
+                issues.push(format!("ERROR in {}: {}", path.display(), e));
+            }
+        }
+    }
+}
